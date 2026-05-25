@@ -505,6 +505,10 @@ class MaskDINO(nn.Module):
             mask_scores_per_image = 1.0
         result.scores = scores_per_image * mask_scores_per_image
         result.pred_classes = labels_per_image
+        # Expose the decoder query index that produced each kept instance, so
+        # downstream heads (e.g. qseg keypoint head) can re-index into
+        # self.sem_seg_head.predictor._last_decoder_query_embed.
+        result.set("query_indices", topk_indices[keep] if self.panoptic_on else topk_indices)
         return result
 
     def box_postprocess(self, out_bbox, img_h, img_w):
