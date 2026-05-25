@@ -71,12 +71,13 @@ def gen_encoder_output_proposals(memory:Tensor, memory_padding_mask:Tensor, spat
     return output_memory, output_proposals
 
 
-def gen_sineembed_for_position(pos_tensor):
-    # n_query, bs, _ = pos_tensor.size()
-    # sineembed_tensor = torch.zeros(n_query, bs, 256)
+def gen_sineembed_for_position(pos_tensor, num_pos_feats=128):
+    # Per-coord positional feature count. Total sine-embed dim is
+    # num_pos_feats * pos_tensor.size(-1). Callers should pass d_model // 2
+    # so that downstream ref_point_head input (query_dim/2 * d_model) matches.
     scale = 2 * math.pi
-    dim_t = torch.arange(128, dtype=torch.float32, device=pos_tensor.device)
-    dim_t = 10000 ** (2 * (dim_t // 2) / 128)
+    dim_t = torch.arange(num_pos_feats, dtype=torch.float32, device=pos_tensor.device)
+    dim_t = 10000 ** (2 * (dim_t // 2) / num_pos_feats)
     x_embed = pos_tensor[:, :, 0] * scale
     y_embed = pos_tensor[:, :, 1] * scale
     pos_x = x_embed[:, :, None] / dim_t

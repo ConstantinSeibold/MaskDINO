@@ -126,7 +126,9 @@ class TransformerDecoder(nn.Module):
 
             reference_points_input = reference_points[:, :, None] \
                                          * torch.cat([valid_ratios, valid_ratios], -1)[None, :]  # nq, bs, nlevel, 4
-            query_sine_embed = gen_sineembed_for_position(reference_points_input[:, :, 0, :]) # nq, bs, 256*2
+            query_sine_embed = gen_sineembed_for_position(
+                reference_points_input[:, :, 0, :], num_pos_feats=self.d_model // 2,
+            )
 
             raw_query_pos = self.ref_point_head(query_sine_embed)  # nq, bs, 256
             pos_scale = self.query_scale(output) if self.query_scale is not None else 1

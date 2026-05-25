@@ -498,6 +498,9 @@ class MaskDINODecoder(nn.Module):
         }
         if self.two_stage:
             out['interm_outputs'] = interm_outputs
+        # Expose final decoder query embeddings for downstream post-match heads
+        # (e.g. qseg keypoint loss). hs[-1] is shape (B, Q, C).
+        self._last_decoder_query_embed = hs[-1]
         return out, mask_dict
 
     def forward_prediction_heads(self, output, mask_features, pred_mask=True):

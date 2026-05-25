@@ -355,6 +355,8 @@ class SetCriterion(nn.Module):
                     output_idx = tgt_idx = torch.tensor([]).long().cuda()
                 exc_idx.append((output_idx, tgt_idx))
         indices = self.matcher(outputs_without_aux, targets)
+        # Expose matcher indices for downstream post-match heads (e.g. qseg keypoint loss).
+        self._last_indices = indices
         # Compute the average number of target boxes accross all nodes, for normalization purposes
         num_masks = sum(len(t["labels"]) for t in targets)
         num_masks = torch.as_tensor(

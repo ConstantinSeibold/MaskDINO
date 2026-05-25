@@ -266,6 +266,25 @@ class MaskDINO(nn.Module):
             # bipartite matching-based loss
             losses = self.criterion(outputs, targets,mask_dict)
 
+            # Expose post-match state for downstream heads (e.g. qseg keypoint loss):
+            #  - decoder query embeddings (B, Q, C) from the last decoder layer
+            #  - pred boxes in absolute pixel coords (xyxy) on the padded image
+            #  - per-batch (pred_idx, gt_idx) Hungarian matching from the criterion
+            try:
+                from .utils.box_ops import box_cxcywh_to_xyxy as _b_cxcywh_to_xyxy
+                predictor = self.sem_seg_head.predictor
+                self._last_decoder_query_embed = getattr(predictor, "_last_decoder_query_embed", None)
+                pb_norm = outputs.get("pred_boxes")  # (B, Q, 4) cxcywh, normalized
+                if pb_norm is not None:
+                    H_pad, W_pad = images.tensor.shape[-2:]
+                    scale = torch.as_tensor(
+                        [W_pad, H_pad, W_pad, H_pad], dtype=pb_norm.dtype, device=pb_norm.device,
+                    )
+                    self._last_pred_boxes_xyxy = _b_cxcywh_to_xyxy(pb_norm) * scale
+                self._last_matched_indices = getattr(self.criterion, "_last_indices", None)
+            except Exception:
+                pass
+
             for k in list(losses.keys()):
                 if k in self.criterion.weight_dict:
                     losses[k] *= self.criterion.weight_dict[k]
