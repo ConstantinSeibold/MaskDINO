@@ -12,7 +12,10 @@ import torch
 import torch.nn.functional as F
 from scipy.optimize import linear_sum_assignment
 from torch import nn
-from torch.cuda.amp import autocast
+# autocast wrapper: use torch.amp.autocast("cuda", ...) under the hood
+import torch as _torch
+from functools import partial as _partial
+autocast = _partial(_torch.amp.autocast, "cuda")
 
 from detectron2.projects.point_rend.point_features import point_sample
 from maskdino.utils.box_ops import generalized_box_iou,box_cxcywh_to_xyxy

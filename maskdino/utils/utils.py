@@ -50,7 +50,7 @@ def gen_encoder_output_proposals(memory:Tensor, memory_padding_mask:Tensor, spat
         valid_W = torch.sum(~mask_flatten_[:, 0, :, 0], 1)
 
         grid_y, grid_x = torch.meshgrid(torch.linspace(0, H_ - 1, H_, dtype=torch.float32, device=memory.device),
-                                        torch.linspace(0, W_ - 1, W_, dtype=torch.float32, device=memory.device))
+                                        torch.linspace(0, W_ - 1, W_, dtype=torch.float32, device=memory.device), indexing='ij')
         grid = torch.cat([grid_x.unsqueeze(-1), grid_y.unsqueeze(-1)], -1)
 
         scale = torch.cat([valid_W.unsqueeze(-1), valid_H.unsqueeze(-1)], 1).view(N_, 1, 1, 2)

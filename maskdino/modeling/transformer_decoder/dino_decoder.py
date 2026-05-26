@@ -9,7 +9,10 @@
 from typing import Optional, List, Union
 import torch
 from torch import nn, Tensor
-from torch.cuda.amp import autocast
+# autocast wrapper: use torch.amp.autocast("cuda", ...) under the hood
+import torch as _torch
+from functools import partial as _partial
+autocast = _partial(_torch.amp.autocast, "cuda")
 
 from ...utils.utils import MLP, _get_clones, _get_activation_fn, gen_sineembed_for_position, inverse_sigmoid
 from ..pixel_decoder.ops.modules import MSDeformAttn
