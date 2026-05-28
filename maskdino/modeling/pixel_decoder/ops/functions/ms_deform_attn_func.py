@@ -29,8 +29,25 @@ except ModuleNotFoundError as e:
     raise ModuleNotFoundError(info_string)
 
 
+# qseg patch: keep this op in fp32 under autocast. The CUDA kernel dispatches via
+# AT_DISPATCH_FLOATING_TYPES (float/double only) -- bf16/fp16 inputs make it throw,
+# and the bare `except` in MSDeformAttn.forward then silently falls back to the
+# ~10x slower pure-pytorch core. custom_fwd(cast_inputs=fp32) casts the float
+# inputs to fp32 and runs with autocast disabled (a no-op when autocast is off, so
+# fp32 training is unaffected).
+try:
+    from torch.amp import custom_fwd as _custom_fwd, custom_bwd as _custom_bwd
+    _qseg_custom_fwd = _custom_fwd(device_type="cuda", cast_inputs=torch.float32)
+    _qseg_custom_bwd = _custom_bwd(device_type="cuda")
+except (ImportError, TypeError):  # torch < 2.4
+    from torch.cuda.amp import custom_fwd as _custom_fwd, custom_bwd as _custom_bwd
+    _qseg_custom_fwd = _custom_fwd(cast_inputs=torch.float32)
+    _qseg_custom_bwd = _custom_bwd
+
+
 class MSDeformAttnFunction(Function):
     @staticmethod
+    @_qseg_custom_fwd
     def forward(ctx, value, value_spatial_shapes, value_level_start_index, sampling_locations, attention_weights, im2col_step):
         ctx.im2col_step = im2col_step
         output = MSDA.ms_deform_attn_forward(
@@ -40,6 +57,7 @@ class MSDeformAttnFunction(Function):
 
     @staticmethod
     @once_differentiable
+    @_qseg_custom_bwd
     def backward(ctx, grad_output):
         value, value_spatial_shapes, value_level_start_index, sampling_locations, attention_weights = ctx.saved_tensors
         grad_value, grad_sampling_loc, grad_attn_weight = \

@@ -247,6 +247,23 @@ class DeformableTransformerDecoderLayer(nn.Module):
             - tgt/tgt_query_pos: nq, bs, d_model
             -
         """
+        # deformable detr does not support half precision. This layer runs under
+        # @autocast(enabled=False), so cast bf16/fp16 activations coming from an
+        # outer autocast to fp32 (mirrors maskdino_encoder.forward_features, which
+        # .float()s its inputs for the same reason). Without this, the first Linear
+        # (e.g. value_proj) hits "mat1 and mat2 must have the same dtype".
+        if tgt is not None:
+            tgt = tgt.float()
+        if tgt_query_pos is not None:
+            tgt_query_pos = tgt_query_pos.float()
+        if tgt_query_sine_embed is not None:
+            tgt_query_sine_embed = tgt_query_sine_embed.float()
+        if tgt_reference_points is not None:
+            tgt_reference_points = tgt_reference_points.float()
+        if memory is not None:
+            memory = memory.float()
+        if memory_pos is not None:
+            memory_pos = memory_pos.float()
         # self attention
         if self.self_attn is not None:
             q = k = self.with_pos_embed(tgt, tgt_query_pos)
