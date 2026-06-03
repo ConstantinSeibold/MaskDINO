@@ -499,8 +499,17 @@ class MaskDINODecoder(nn.Module):
         if self.two_stage:
             out['interm_outputs'] = interm_outputs
         # Expose final decoder query embeddings for downstream post-match heads
-        # (e.g. qseg keypoint loss). hs[-1] is shape (B, Q, C).
-        self._last_decoder_query_embed = hs[-1]
+        # (e.g. qseg keypoint loss). During DN training hs[-1] is the FULL
+        # [DN | matching] set, but the matcher indices (criterion._last_indices)
+        # live in the DN-stripped matching space (dn_post_process drops the first
+        # pad_size). Strip the DN prefix here so the stashed embeds align with
+        # those indices; otherwise post-match heads read off-by-pad_size (DN)
+        # queries and train on scrambled query<->GT pairs (kpt coord loss stayed
+        # flat / OKS 0). At inference mask_dict is None (no DN) -> hs[-1] as-is.
+        if mask_dict is not None:
+            self._last_decoder_query_embed = hs[-1][:, mask_dict["pad_size"]:]
+        else:
+            self._last_decoder_query_embed = hs[-1]
         return out, mask_dict
 
     def forward_prediction_heads(self, output, mask_features, pred_mask=True):
