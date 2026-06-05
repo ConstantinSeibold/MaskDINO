@@ -507,9 +507,13 @@ class MaskDINODecoder(nn.Module):
         # queries and train on scrambled query<->GT pairs (kpt coord loss stayed
         # flat / OKS 0). At inference mask_dict is None (no DN) -> hs[-1] as-is.
         if mask_dict is not None:
-            self._last_decoder_query_embed = hs[-1][:, mask_dict["pad_size"]:]
+            _ps = mask_dict["pad_size"]
+            self._last_decoder_query_embed = hs[-1][:, _ps:]
+            # All decoder layers (DN-stripped) for deep-supervised post-match heads.
+            self._last_decoder_query_embed_layers = [h[:, _ps:] for h in hs]
         else:
             self._last_decoder_query_embed = hs[-1]
+            self._last_decoder_query_embed_layers = [h for h in hs]
         return out, mask_dict
 
     def forward_prediction_heads(self, output, mask_features, pred_mask=True):

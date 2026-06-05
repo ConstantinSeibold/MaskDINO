@@ -274,6 +274,7 @@ class MaskDINO(nn.Module):
                 from .utils.box_ops import box_cxcywh_to_xyxy as _b_cxcywh_to_xyxy
                 predictor = self.sem_seg_head.predictor
                 self._last_decoder_query_embed = getattr(predictor, "_last_decoder_query_embed", None)
+                self._last_decoder_query_embed_layers = getattr(predictor, "_last_decoder_query_embed_layers", None)
                 pb_norm = outputs.get("pred_boxes")  # (B, Q, 4) cxcywh, normalized
                 if pb_norm is not None:
                     H_pad, W_pad = images.tensor.shape[-2:]
@@ -282,6 +283,7 @@ class MaskDINO(nn.Module):
                     )
                     self._last_pred_boxes_xyxy = _b_cxcywh_to_xyxy(pb_norm) * scale
                 self._last_matched_indices = getattr(self.criterion, "_last_indices", None)
+                self._last_aux_matched_indices = getattr(self.criterion, "_last_aux_indices", None)
             except Exception:
                 pass
 
