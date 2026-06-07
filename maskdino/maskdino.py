@@ -263,6 +263,15 @@ class MaskDINO(nn.Module):
             else:
                 targets = None
             outputs,mask_dict = self.sem_seg_head(features,targets=targets)
+            # qseg SSL per-class IGNORE (patch #9): on an ALL-pseudo batch, hand the
+            # criterion the set of ignored class indices (stashed on the meta-arch by the
+            # refresh hook as `_ssl_ignore_classes`) so their classification columns are
+            # masked out of loss_ce; trusted classes keep full loss_ce. Labeled batches and
+            # the no-flag default leave it None (identical to upstream behaviour).
+            _ssl_ign = getattr(self, "_ssl_ignore_classes", None)
+            _all_pseudo = (len(batched_inputs) > 0
+                           and all(x.get("is_pseudo", False) for x in batched_inputs))
+            self.criterion._ignore_classes = _ssl_ign if (_ssl_ign is not None and _all_pseudo) else None
             # bipartite matching-based loss
             losses = self.criterion(outputs, targets,mask_dict)
 

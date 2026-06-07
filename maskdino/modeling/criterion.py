@@ -24,7 +24,7 @@ from ..utils.misc import is_dist_avail_and_initialized, nested_tensor_from_tenso
 from maskdino.utils import box_ops
 
 
-def sigmoid_focal_loss(inputs, targets, num_boxes, alpha: float = 0.25, gamma: float = 2):
+def sigmoid_focal_loss(inputs, targets, num_boxes, alpha: float = 0.25, gamma: float = 2, class_mask=None):
     """
     Loss used in RetinaNet for dense detection: https://arxiv.org/abs/1708.02002.
     Args:
@@ -49,6 +49,11 @@ def sigmoid_focal_loss(inputs, targets, num_boxes, alpha: float = 0.25, gamma: f
         alpha_t = alpha * targets + (1 - alpha) * (1 - targets)
         loss = alpha_t * loss
 
+    if class_mask is not None:
+        # qseg SSL per-class IGNORE (patch #9): zero the loss on ignored class columns
+        # (class_mask broadcasts over batch + queries) so pseudo images neither boost nor
+        # suppress those classes. num_boxes is unchanged, so trusted columns keep scale.
+        loss = loss * class_mask
 
     return loss.mean(1).sum() / num_boxes
 
@@ -150,6 +155,7 @@ class SetCriterion(nn.Module):
         empty_weight = torch.ones(self.num_classes + 1)
         empty_weight[-1] = self.eos_coef
         self.register_buffer("empty_weight", empty_weight)
+        self._ignore_classes = None   # qseg SSL patch #9: set per-forward by the meta-arch
 
         # pointwise mask loss parameters
         self.num_points = num_points
@@ -196,7 +202,17 @@ class SetCriterion(nn.Module):
         target_classes_onehot.scatter_(2, target_classes.unsqueeze(-1), 1)
 
         target_classes_onehot = target_classes_onehot[:,:,:-1]
-        loss_ce = sigmoid_focal_loss(src_logits, target_classes_onehot, num_boxes, alpha=self.focal_alpha, gamma=2) * src_logits.shape[1]
+        # qseg SSL per-class IGNORE (patch #9): when self._ignore_classes is set (only on
+        # all-pseudo batches; see maskdino.forward), mask those class columns out of the
+        # focal loss so trusted classes get full loss_ce (matched->boosted, unmatched->bg)
+        # while ignored classes are neither boosted nor suppressed. Applies identically to
+        # main, DN, aux, interm (all route here via get_loss('labels')).
+        class_mask = None
+        ign = getattr(self, "_ignore_classes", None)
+        if ign is not None and ign.numel() > 0:
+            class_mask = src_logits.new_ones((1, 1, src_logits.shape[2]))
+            class_mask[..., ign] = 0.0
+        loss_ce = sigmoid_focal_loss(src_logits, target_classes_onehot, num_boxes, alpha=self.focal_alpha, gamma=2, class_mask=class_mask) * src_logits.shape[1]
         losses = {'loss_ce': loss_ce}
 
         return losses
