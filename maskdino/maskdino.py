@@ -379,6 +379,8 @@ class MaskDINO(nn.Module):
                     "boxes":box_ops.box_xyxy_to_cxcywh(targets_per_image.gt_boxes.tensor)/image_size_xyxy
                 }
             )
+            if targets_per_image.has("gt_weight_maps"):   # qseg patch #10: RPG+ per-point weight
+                new_targets[-1]["weight_maps"] = targets_per_image.gt_weight_maps
         return new_targets
 
     def prepare_targets_detr(self, targets, images):
@@ -399,6 +401,8 @@ class MaskDINO(nn.Module):
                     "boxes": box_ops.box_xyxy_to_cxcywh(targets_per_image.gt_boxes.tensor) / image_size_xyxy
                 }
             )
+            if targets_per_image.has("gt_weight_maps"):   # qseg patch #10: RPG+ per-point weight
+                new_targets[-1]["weight_maps"] = targets_per_image.gt_weight_maps
         return new_targets
 
     def semantic_inference(self, mask_cls, mask_pred):

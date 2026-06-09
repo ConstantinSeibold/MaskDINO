@@ -110,6 +110,23 @@ sigmoid_ce_loss_jit = torch.jit.script(
 )  # type: torch.jit.ScriptModule
 
 
+# qseg patch #10: PER-POINT weighted mask losses for RPG+ (reference-guided pseudo-labels).
+# `weights` [num_inst, num_points] in [0,1] is the per-point density x agreement weight
+# (rpg.agreement_weight_map), point_sampled like the mask. Paper eq 8: E[CE . W]. No-op
+# vs the originals when weights are all-ones, so labeled data is unchanged.
+def sigmoid_ce_loss_weighted(inputs, targets, num_masks, weights):
+    loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction="none")
+    return (loss * weights).mean(1).sum() / num_masks
+
+
+def dice_loss_weighted(inputs, targets, num_masks, weights):
+    inputs = inputs.sigmoid()
+    numerator = 2 * (inputs * targets * weights).sum(-1)
+    denominator = (inputs * weights).sum(-1) + (targets * weights).sum(-1)
+    loss = 1 - (numerator + 1) / (denominator + 1)
+    return loss.sum() / num_masks
+
+
 def calculate_uncertainty(logits):
     """
     We estimate uncerainty as L1 distance between 0.0 and the logit prediction in 'logits' for the
@@ -306,10 +323,27 @@ class SetCriterion(nn.Module):
             align_corners=False,
         ).squeeze(1)
 
-        losses = {
-            "loss_mask": sigmoid_ce_loss_jit(point_logits, point_labels, num_masks),
-            "loss_dice": dice_loss_jit(point_logits, point_labels, num_masks),
-        }
+        # qseg patch #10: RPG+ per-point mask weights. When every target carries
+        # "weight_maps" (pseudo batch), sample them at the SAME point_coords as the mask
+        # and weight the CE/Dice per point; otherwise (labeled batch) fall back to the
+        # unweighted jit losses -> upstream behaviour unchanged.
+        point_weights = None
+        if len(targets) > 0 and all("weight_maps" in t for t in targets):
+            wmaps, _ = nested_tensor_from_tensor_list([t["weight_maps"] for t in targets]).decompose()
+            wmaps = wmaps.to(src_masks)[tgt_idx][:, None]            # [M, 1, wr, wr]
+            with torch.no_grad():
+                point_weights = point_sample(wmaps, point_coords, align_corners=False).squeeze(1)
+
+        if point_weights is not None:
+            losses = {
+                "loss_mask": sigmoid_ce_loss_weighted(point_logits, point_labels, num_masks, point_weights),
+                "loss_dice": dice_loss_weighted(point_logits, point_labels, num_masks, point_weights),
+            }
+        else:
+            losses = {
+                "loss_mask": sigmoid_ce_loss_jit(point_logits, point_labels, num_masks),
+                "loss_dice": dice_loss_jit(point_logits, point_labels, num_masks),
+            }
 
         del src_masks
         del target_masks
