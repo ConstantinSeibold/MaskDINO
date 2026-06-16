@@ -381,6 +381,9 @@ class MaskDINO(nn.Module):
             )
             if targets_per_image.has("gt_weight_maps"):   # qseg patch #10: RPG+ per-point weight
                 new_targets[-1]["weight_maps"] = targets_per_image.gt_weight_maps
+            if targets_per_image.has("gt_ema_maps"):       # qseg patch #11: FixMatch consistency
+                new_targets[-1]["ema_maps"] = targets_per_image.gt_ema_maps
+                new_targets[-1]["ema_valid"] = targets_per_image.gt_ema_valid
         return new_targets
 
     def prepare_targets_detr(self, targets, images):
@@ -403,6 +406,9 @@ class MaskDINO(nn.Module):
             )
             if targets_per_image.has("gt_weight_maps"):   # qseg patch #10: RPG+ per-point weight
                 new_targets[-1]["weight_maps"] = targets_per_image.gt_weight_maps
+            if targets_per_image.has("gt_ema_maps"):       # qseg patch #11: FixMatch consistency
+                new_targets[-1]["ema_maps"] = targets_per_image.gt_ema_maps
+                new_targets[-1]["ema_valid"] = targets_per_image.gt_ema_valid
         return new_targets
 
     def semantic_inference(self, mask_cls, mask_pred):

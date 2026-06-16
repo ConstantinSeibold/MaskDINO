@@ -335,16 +335,32 @@ class SetCriterion(nn.Module):
                 point_weights = point_sample(wmaps, point_coords, align_corners=False).squeeze(1)
 
         if point_weights is not None:
-            losses = {
-                "loss_mask": sigmoid_ce_loss_weighted(point_logits, point_labels, num_masks, point_weights),
-                "loss_dice": dice_loss_weighted(point_logits, point_labels, num_masks, point_weights),
-            }
+            lm = sigmoid_ce_loss_weighted(point_logits, point_labels, num_masks, point_weights)
+            ld = dice_loss_weighted(point_logits, point_labels, num_masks, point_weights)
         else:
-            losses = {
-                "loss_mask": sigmoid_ce_loss_jit(point_logits, point_labels, num_masks),
-                "loss_dice": dice_loss_jit(point_logits, point_labels, num_masks),
-            }
+            lm = sigmoid_ce_loss_jit(point_logits, point_labels, num_masks)
+            ld = dice_loss_jit(point_logits, point_labels, num_masks)
 
+        # qseg patch #11: RPG (+) FixMatch consistency. When the targets carry the EMA
+        # teacher's confident mask ("ema_maps") + a valid flag, add a CE+Dice term pulling
+        # the matched query's mask toward the EMA mask, on valid instances only, folded into
+        # loss_mask/loss_dice with weight self._fixmatch_weight. Coexists with the RPG term
+        # (they may disagree). No-op when ema_maps absent (labeled / non-fixmatch).
+        if len(targets) > 0 and all("ema_maps" in t for t in targets):
+            emaps, _ = nested_tensor_from_tensor_list([t["ema_maps"] for t in targets]).decompose()
+            emaps = emaps.to(src_masks)[tgt_idx][:, None]                  # [M, 1, wr, wr]
+            evalid = (emaps.flatten(1).sum(1) > 0).to(src_masks)          # [M] zero map = EMA silent
+            with torch.no_grad():
+                ema_pt = point_sample(emaps, point_coords, align_corners=False).squeeze(1)  # [M, P]
+            fmw = float(getattr(self, "_fixmatch_weight", 1.0))
+            nv = evalid.sum().clamp_min(1.0)
+            bce = F.binary_cross_entropy_with_logits(point_logits, ema_pt, reduction="none").mean(1)
+            lm = lm + fmw * (bce * evalid).sum() / nv
+            ps = point_logits.sigmoid()
+            dice = 1.0 - (2 * (ps * ema_pt).sum(-1) + 1) / (ps.sum(-1) + ema_pt.sum(-1) + 1)
+            ld = ld + fmw * (dice * evalid).sum() / nv
+
+        losses = {"loss_mask": lm, "loss_dice": ld}
         del src_masks
         del target_masks
         return losses
