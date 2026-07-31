@@ -525,6 +525,12 @@ class MaskDINO(nn.Module):
         if self.focus_on_box:
             mask_scores_per_image = 1.0
         result.scores = scores_per_image * mask_scores_per_image
+        # Expose the two factors of `scores` (maskness = mean in-mask prob, and the sigmoid class
+        # score) so downstream can read the pure mask-quality term separately. Additive only.
+        # NB class_score here is a DETR-style sigmoid probability, not a softmax.
+        result.mask_score = (mask_scores_per_image if torch.is_tensor(mask_scores_per_image)
+                             else torch.full_like(scores_per_image, float(mask_scores_per_image)))
+        result.class_score = scores_per_image
         result.pred_classes = labels_per_image
         # Expose the decoder query index that produced each kept instance, so
         # downstream heads (e.g. qseg keypoint head) can re-index into
